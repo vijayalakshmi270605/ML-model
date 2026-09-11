@@ -208,7 +208,7 @@ jobs:
         # Pinned to a commit SHA, not a mutable tag — a third-party action
         # with `packages: write`/registry-push access nearby in this job is
         # exactly the kind of supply-chain surface worth pinning immutably.
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ghcr.io/${{ steps.meta.outputs.repo_lc }}-${{ matrix.image }}:${{ steps.meta.outputs.short_sha }}
           format: table
