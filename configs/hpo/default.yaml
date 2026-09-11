@@ -1,0 +1,34 @@
+# Default hyperparameter-search configuration — validated by
+# ad_mri.training.hpo_config.HPOConfig.
+#
+# Every trial is scored by n_folds-fold cross-validation on the development
+# pool (train + val manifests) — never the held-out test set. See
+# docs/model_selection.md for the full train/val/CV/test distinction.
+version: "1.0.0"
+study_name: ad-mri-hpo
+n_trials: 20
+seed: 42
+
+# --- cross-validation used to evaluate each trial ---
+n_folds: 5
+epochs_per_trial: 10   # short training per trial; the winner is retrained to
+                        # the base training config's full `epochs` afterward
+
+# --- selection objective (a predefined validation metric — never accuracy on
+# the test set) ---
+metric_name: f1_macro
+metric_mode: max
+
+# --- search space ---
+search_space:
+  learning_rate: [0.00001, 0.01]     # sampled log-uniform
+  batch_size: [4, 8, 16]
+  optimizer: [adam, adamw, sgd]
+  weight_decay: [0.000001, 0.01]     # sampled log-uniform
+  dropout_fc: [0.1, 0.7]
+  base_channels: [16, 32, 64]
+  num_blocks: [3, 4, 5]
+
+mlflow_enabled: true
+mlflow_experiment_name: ad-mri-hpo
+mlflow_tracking_uri: null

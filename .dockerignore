@@ -1,0 +1,56 @@
+# Keeps build context small and, more importantly, keeps secrets/local state
+# out of every image layer — nothing listed here is ever COPYable into an
+# image even by accident. See docs/deployment.md "Secrets management".
+
+# VCS / CI
+.git
+.github
+
+# Python environments/caches
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+
+# Secrets / local environment — never baked into an image; supplied at
+# `docker run`/`docker compose up` time via env_file or the orchestrator's
+# secret store instead.
+.env
+.env.*
+!.env.example
+
+# Data, experiment artifacts, and generated outputs — mounted as volumes at
+# runtime, never part of the image itself.
+data
+artifacts
+mlruns
+mlartifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# Not needed inside any image — docs/tests/tooling are dev-time only.
+docs
+notebooks
+tests
+scripts
+deploy
+docker
+.dvc
+.dvcignore
+*.dockerignore
+Dockerfile*
+docker-compose*.yml
+
+# Editor/OS noise
+.vscode
+.idea
+*.DS_Store
+Thumbs.db

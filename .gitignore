@@ -1,0 +1,62 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment & secrets — never commit real values. Broad on purpose (any
+# `*.env` anywhere, e.g. a locally-created docker/production.env used to
+# test docker-compose.prod.yml) with explicit, narrow exceptions for the
+# checked-in, secret-free templates.
+.env
+*.env
+*.env.local
+!.env.example
+!deploy/environments/*.env.example
+
+# Testing / coverage / linting caches
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+
+# Data & experiment artifacts — versioned via DVC/MLflow, never via git
+data/raw/*
+data/interim/*
+data/processed/*
+data/splits/*
+!data/**/.gitkeep
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Training run outputs (checkpoints, training curves, confusion matrices) —
+# versioned via MLflow artifacts, never via git.
+artifacts/
+
+# DVC local cache/tmp
+/.dvc/cache
+/.dvc/tmp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Microsoft Office temporary lock files
+~$*

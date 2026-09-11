@@ -1,0 +1,45 @@
+# DVC pipeline: raw scans -> inventory -> validated inventory -> manifest -> splits.
+#
+# This declares the pipeline; it is not executed automatically. Install DVC
+# (`pip install -e ".[train]"`) and run `dvc repro` once `params.yaml` points at
+# a real dataset config with data actually present under its `root_dir`. See
+# the "DVC workflow" commands in README.md / docs/TECHNICAL_SPECIFICATION.md §17.
+vars:
+  - params.yaml
+
+stages:
+  ingest:
+    cmd: ad-mri data ingest --dataset-config ${dataset_config} --interim-dir data/interim
+    deps:
+      - ${dataset_config}
+      - src/ad_mri/data_pipeline/ingestion.py
+      - src/ad_mri/data_pipeline/conversion.py
+      - src/ad_mri/data_pipeline/dataset_config.py
+    outs:
+      - data/interim/${dataset_name}/inventory.csv
+
+  validate:
+    cmd: ad-mri data validate --dataset-config ${dataset_config}
+    deps:
+      - data/interim/${dataset_name}/inventory.csv
+      - src/ad_mri/data_pipeline/validation.py
+    outs:
+      - data/interim/${dataset_name}/validated.csv
+
+  manifest:
+    cmd: ad-mri data manifest --dataset-config ${dataset_config}
+    deps:
+      - data/interim/${dataset_name}/validated.csv
+      - src/ad_mri/data_pipeline/manifest.py
+    outs:
+      - data/processed/${dataset_name}/manifest.csv
+
+  split:
+    cmd: ad-mri data split --dataset-config ${dataset_config}
+    deps:
+      - data/processed/${dataset_name}/manifest.csv
+      - src/ad_mri/data_pipeline/splitting.py
+    outs:
+      - data/splits/${dataset_name}/train.csv
+      - data/splits/${dataset_name}/val.csv
+      - data/splits/${dataset_name}/test.csv

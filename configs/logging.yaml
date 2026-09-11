@@ -1,0 +1,34 @@
+# Base stdlib logging configuration, loaded by ad_mri.core.logging.configure_logging().
+# Handler formatters are re-attached to a structlog ProcessorFormatter at runtime
+# (console renderer in dev, JSON renderer in prod — driven by LOG_FORMAT), so the
+# `format` string below is a harmless placeholder, not the final output shape.
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: "%(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    stream: ext://sys.stdout
+
+root:
+  level: INFO
+  handlers: [console]
+
+loggers:
+  uvicorn:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  uvicorn.access:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  sqlalchemy.engine:
+    level: WARNING
+    handlers: [console]
+    propagate: false

@@ -1,0 +1,5 @@
+# Files DVC should never scan/track even inside a tracked directory.
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

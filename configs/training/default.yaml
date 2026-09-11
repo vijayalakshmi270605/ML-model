@@ -1,0 +1,53 @@
+# Default training run configuration — validated by
+# ad_mri.training.training_config.TrainingConfig.
+version: "1.0.0"
+
+# --- Core loop ---
+batch_size: 8
+epochs: 50
+num_workers: 0   # keep 0 by default: cross-platform-safe, and keeps per-sample
+                 # load/preprocessing errors attributable to the exact failing
+                 # sample rather than opaque across a worker-process boundary.
+
+# --- Optimizer ---
+optimizer: adamw       # adam | adamw | sgd
+learning_rate: 0.001
+weight_decay: 0.0001
+momentum: 0.9          # sgd only
+gradient_clip_norm: 1.0
+
+# --- LR scheduler ---
+scheduler: cosine       # none | step | cosine | plateau
+scheduler_step_size: 10 # step
+scheduler_gamma: 0.1    # step
+scheduler_t_max: null   # cosine; defaults to `epochs` when null
+scheduler_patience: 5   # plateau
+
+# --- Early stopping ---
+early_stopping_patience: 10
+early_stopping_metric: val_loss
+early_stopping_mode: min
+early_stopping_min_delta: 0.0
+
+# --- Class imbalance ---
+# none | sampler (WeightedRandomSampler) | loss_weights (weighted CrossEntropyLoss)
+class_imbalance_strategy: loss_weights
+
+# --- Mixed precision / device ---
+mixed_precision: true
+device: auto   # auto | cpu | cuda
+
+# --- Determinism ---
+seed: 42
+deterministic: false
+
+# --- Checkpointing ---
+checkpoint_dir: artifacts/checkpoints
+save_every_n_epochs: 1
+
+# --- MLflow ---
+mlflow_enabled: true
+mlflow_experiment_name: ad-mri
+mlflow_tracking_uri: null   # null -> Settings.mlflow_tracking_uri, else mlflow's local ./mlruns
+
+log_every_n_steps: 10

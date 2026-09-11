@@ -1,0 +1,22 @@
+version: "1.0.0"
+
+# Which spatial axis of a 3D volume to slice (0/1/2); ignored for a 2D model.
+slice_axis: 0
+# "middle" or an integer string.
+slice_index: middle
+
+# Perturbation-sample budget — the dominant cost driver (one 3D forward pass
+# per sample). Increase for a more faithful local surrogate at the cost of
+# runtime; see docs/explainability.md "Limitations".
+num_samples: 500
+batch_size: 8
+num_features: 10
+
+segmentation_algorithm: quickshift
+quickshift_kernel_size: 4.0
+quickshift_max_dist: 200.0
+quickshift_ratio: 0.2
+slic_n_segments: 50
+slic_compactness: 10.0
+
+seed: 42

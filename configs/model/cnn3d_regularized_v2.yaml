@@ -1,0 +1,25 @@
+# Regularized variant of cnn3d_default.yaml — same architecture (4 conv
+# blocks, 32->64->128->256, 1.23M params), with mild conv-block dropout added.
+# Rationale (adni_3class_run1 post-mortem, 2026-09-10): 1.23M params against
+# 134 training subjects is a very high parameter-to-sample ratio; the FC head
+# already had dropout_fc=0.5 but the conv feature extractor had none. Adding
+# light dropout inside the conv blocks gives the feature extractor itself
+# some regularization pressure without materially changing model capacity or
+# compute cost.
+version: "1.0.0"
+architecture: convnet
+spatial_dims: 3
+in_channels: 1
+input_shape: [128, 128, 128]
+num_classes: 3
+num_blocks: 4
+base_channels: 32
+channel_growth: double
+conv_kernel_size: 3
+pool_kernel_size: 2
+normalization: batch
+activation: relu
+dropout_conv: 0.1
+fc_hidden_dim: 256
+dropout_fc: 0.5
+weight_init: kaiming

@@ -1,0 +1,23 @@
+# Prometheus server config for the ad-mri stack — pairs with alerts.yml.
+# Local dev: mounted by the `prometheus` service, `observability` profile,
+# in docker/docker-compose.yml. Production: adapt `targets` to the real
+# service discovery mechanism your orchestrator uses (this static-target
+# form is a local/dev convenience, not a production scaling pattern).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # Relative to this file - both live together in deploy/prometheus/ and are
+  # mounted together (e.g. both at /etc/prometheus/ in a container).
+  - alerts.yml
+
+scrape_configs:
+  - job_name: ad-mri-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+# Alertmanager is not part of this stack (a documented seam, like
+# deploy/k8s/ — see docs/monitoring.md "What is explicitly out of scope");
+# add an `alerting:` block here once one is deployed.

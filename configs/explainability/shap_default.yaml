@@ -1,0 +1,12 @@
+version: "1.0.0"
+
+explainer: gradient  # "gradient" (GradientExplainer) | "deep" (DeepExplainer)
+n_background_samples: 16
+nsamples: 50
+
+# Slice used only for the overlay PNG / global-importance visualization — the
+# SHAP values themselves are computed over the entire volume, not this slice.
+slice_axis: 0
+slice_index: middle
+
+seed: 42

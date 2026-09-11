@@ -1,0 +1,4 @@
+# Core runtime dependencies for the API/service layer.
+# Version pins live in one place: pyproject.toml [project.dependencies].
+# Run from the repository root: pip install -r requirements/base.txt
+-e .

@@ -1,0 +1,176 @@
+{
+  "title": "ad-mri: System & Model Monitoring",
+  "uid": "ad-mri-monitoring",
+  "timezone": "utc",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["ad-mri"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    { "type": "row", "title": "System", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1 },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Process / System CPU",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "ad_mri_process_cpu_percent", "legendFormat": "process" },
+        { "expr": "ad_mri_system_cpu_percent", "legendFormat": "host" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Process / System Memory",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "ad_mri_process_memory_bytes", "legendFormat": "process (bytes)" },
+        { "expr": "ad_mri_system_memory_percent", "legendFormat": "host (%)" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "GPU Utilization / Memory",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "ad_mri_gpu_utilization_percent", "legendFormat": "{{device}} util %" },
+        { "expr": "ad_mri_gpu_memory_used_bytes", "legendFormat": "{{device}} mem bytes" }
+      ],
+      "description": "Empty on a CPU-only deployment - not an error, see monitoring.system_metrics."
+    },
+
+    { "type": "row", "title": "HTTP / Request", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "id": 5 },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Request Rate (throughput)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(ad_mri_http_requests_total[5m])) by (path)", "legendFormat": "{{path}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HTTP Error Rate (5xx)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "datasource": "${datasource}",
+      "targets": [
+        {
+          "expr": "sum(rate(ad_mri_http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(ad_mri_http_requests_total[5m]))",
+          "legendFormat": "error rate"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "steps": [{ "value": 0.05, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "HTTP Latency (p50 / p95)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(ad_mri_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(ad_mri_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ]
+    },
+
+    { "type": "row", "title": "Model", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }, "id": 9 },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Inference Outcomes (success / failure modes)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(rate(ad_mri_inference_requests_total[5m])) by (outcome)", "legendFormat": "{{outcome}}" }
+      ],
+      "description": "outcome=validation_failed / preprocessing_failed are the two Phase 13 failure-mode counters."
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Model Latency (p95)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(ad_mri_inference_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "piechart",
+      "title": "Predicted-Class Distribution (1h)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(increase(ad_mri_predicted_class_total[1h])) by (predicted_class)", "legendFormat": "{{predicted_class}}" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "heatmap",
+      "title": "Confidence Distribution",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "sum(increase(ad_mri_prediction_confidence_bucket[5m])) by (le)", "format": "heatmap", "legendFormat": "{{le}}" }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Input Intensity / Nonzero-Fraction (real-time drift signal)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(ad_mri_input_mean_intensity_bucket[15m])) by (le))", "legendFormat": "mean intensity (p50)" },
+        { "expr": "histogram_quantile(0.50, sum(rate(ad_mri_input_nonzero_fraction_bucket[15m])) by (le))", "legendFormat": "nonzero fraction (p50)" }
+      ]
+    },
+
+    { "type": "row", "title": "Drift (offline report verdicts)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 }, "id": 15 },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Data Drift Alerts Active",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "ad_mri_data_drift_alert_active", "legendFormat": "{{feature}}" }
+      ],
+      "description": "Reflects the most recent `ad-mri monitor drift-report` verdict - see docs/monitoring.md.",
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 1, "color": "red" }] } }, "overrides": [] }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Model Drift Alerts Active (delayed performance)",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
+      "datasource": "${datasource}",
+      "targets": [
+        { "expr": "ad_mri_model_drift_alert_active", "legendFormat": "{{metric}}" }
+      ],
+      "description": "Reflects the most recent `ad-mri monitor model-drift-report` verdict - requires ground-truth labels to have accumulated. See docs/monitoring.md.",
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 1, "color": "red" }] } }, "overrides": [] }
+    }
+  ]
+}

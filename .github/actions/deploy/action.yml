@@ -1,0 +1,90 @@
+name: Deploy ad-mri
+description: >-
+  Deploys one already-built, already-scanned image tag to a target host via
+  SSH, using docker-compose.prod.yml (never rebuilds — see
+  docs/deployment.md "Versioned model artifacts"). Runs pending Alembic
+  migrations, brings the stack up, polls the deployed health endpoint, and
+  automatically rolls back to whatever tag was previously running if the
+  health check fails — see docs/deployment.md "Rollback capability".
+
+inputs:
+  deploy_host:
+    description: Target host (Environment secret)
+    required: true
+  deploy_user:
+    description: SSH user (Environment secret)
+    required: true
+  deploy_ssh_key:
+    description: SSH private key (Environment secret)
+    required: true
+  deploy_path:
+    description: Absolute path on the target host holding docker-compose.prod.yml and the secrets env file
+    required: true
+  image_registry:
+    description: Container registry host (e.g. ghcr.io)
+    required: true
+  image_repo:
+    description: Image repository name/namespace (e.g. an-org/ad-mri)
+    required: true
+  image_tag:
+    description: The image tag to deploy
+    required: true
+  health_url:
+    description: Publicly (or VPN-)reachable URL for this environment's /readyz probe
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Deploy, verify, and roll back on failure
+      # Pinned to a commit SHA, not a mutable tag — this action receives an
+      # SSH private key (see docs/deployment.md §Secrets management), making
+      # it exactly the kind of supply-chain surface worth pinning immutably.
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1.2.5
+      with:
+        host: ${{ inputs.deploy_host }}
+        username: ${{ inputs.deploy_user }}
+        key: ${{ inputs.deploy_ssh_key }}
+        # `set -euo pipefail`: any failed step (a bad pull, a failed
+        # migration, an unreachable compose file) stops the script
+        # immediately rather than silently continuing to "up -d" a broken
+        # deployment.
+        script: |
+          set -euo pipefail
+          cd "${{ inputs.deploy_path }}"
+
+          export IMAGE_REGISTRY="${{ inputs.image_registry }}"
+          export IMAGE_REPO="${{ inputs.image_repo }}"
+          export IMAGE_TAG="${{ inputs.image_tag }}"
+          export SECRETS_ENV_FILE="${{ inputs.deploy_path }}/production.env"
+
+          COMPOSE="docker compose -f docker-compose.prod.yml --env-file ${SECRETS_ENV_FILE}"
+          MARKER="${{ inputs.deploy_path }}/.current_image_tag"
+          PREVIOUS_TAG="$(cat "$MARKER" 2>/dev/null || echo "")"
+
+          echo "Deploying tag ${IMAGE_TAG} (previous: ${PREVIOUS_TAG:-none})"
+          $COMPOSE pull
+          $COMPOSE --profile tools run --rm migrate
+          $COMPOSE up -d
+
+          echo "Waiting for ${{ inputs.health_url }} to report ready..."
+          ATTEMPT=0
+          until curl --fail --silent --max-time 5 "${{ inputs.health_url }}"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "Health check did not pass after $ATTEMPT attempts."
+              if [ -n "$PREVIOUS_TAG" ]; then
+                echo "Rolling back to previous tag: ${PREVIOUS_TAG}"
+                export IMAGE_TAG="$PREVIOUS_TAG"
+                $COMPOSE pull
+                $COMPOSE up -d
+              else
+                echo "No previous tag recorded — nothing to roll back to. Leaving the failed deploy up for inspection."
+              fi
+              exit 1
+            fi
+            sleep 5
+          done
+
+          echo "$IMAGE_TAG" > "$MARKER"
+          echo "Deploy of ${IMAGE_TAG} succeeded and is now recorded as the current tag."

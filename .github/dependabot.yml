@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Keeps pinned third-party GitHub Actions (docker/build-push-action,
+  # aquasecurity/trivy-action, appleboy/ssh-action, ...) current — Dependabot
+  # updates the trailing "# vX.Y.Z" comment alongside the pinned commit SHA
+  # for the SHA-pinned ones (see docs/deployment.md §3).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Python dependencies (pyproject.toml).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Base images (python:3.11-slim, postgres:16-alpine, redis:7-alpine).
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly

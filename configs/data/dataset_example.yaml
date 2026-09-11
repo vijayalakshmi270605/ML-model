@@ -1,0 +1,44 @@
+# Example dataset configuration for an ADNI/OASIS-style export.
+#
+# Expected layout under `root_dir` (one folder per subject):
+#   <root_dir>/<subject_id>/*.nii.gz         # NIfTI, or
+#   <root_dir>/<subject_id>/*.dcm            # a DICOM series (converted if convert_dicom: true)
+#
+# `labels_csv` is a separate file (as shipped by ADNI/OASIS-style distributions)
+# mapping each subject ID to a raw diagnosis label, e.g.:
+#   subject_id,diagnosis
+#   OAS1_0001,Nondemented
+#   OAS1_0002,Demented
+#
+# Copy this file, point it at your actual data, and adjust `label_map` to match
+# your dataset's raw label strings and the class taxonomy you want to train on.
+# Never edit this example in place with real subject data — real MRI data must
+# never be committed to git (see .gitignore / docs/TECHNICAL_SPECIFICATION.md §0, §17).
+
+name: example_mri_dataset
+dataset_source: "example-adni-oasis-style"
+root_dir: data/raw/example_mri_dataset
+modality: T1w
+file_extensions: [".nii.gz", ".nii"]
+subject_dir_pattern: "*"
+
+labels_csv: data/raw/example_mri_dataset/labels.csv
+subject_id_column: subject_id
+label_column: diagnosis
+
+# Raw label (as it appears in labels_csv) -> canonical class name used for training.
+# This taxonomy is dataset-specific by design — see docs/TECHNICAL_SPECIFICATION.md §17.
+label_map:
+  Nondemented: CN
+  VeryMildDemented: MCI
+  MildDemented: AD
+  ModerateDemented: AD
+
+expected_dim_range: [3, 4]
+min_voxel_count: 100000
+convert_dicom: true
+
+seed: 42
+train_ratio: 0.70
+val_ratio: 0.15
+# test_ratio is implied: 1 - train_ratio - val_ratio = 0.15

@@ -1,0 +1,38 @@
+# Default 3D CNN architecture configuration — validated by
+# ad_mri.modeling.model_config.ModelConfig.
+#
+# `num_classes` has NO library-wide default by design: it must match your
+# dataset's label taxonomy (see the `label_map` in your
+# configs/data/*.yaml — e.g. dataset_example.yaml resolves to 3 classes:
+# CN / MCI / AD). The value below (3) is this repo's worked example, not a
+# clinical assumption baked into the architecture.
+version: "1.0.0"
+architecture: convnet
+
+# --- Input ---
+# Must match configs/preprocessing/*.yaml's target_shape (and in_channels=1
+# for a single-modality T1w volume). spatial_dims=3 for volumetric input;
+# set to 2 (with a 2-element input_shape) for a 2D slice-based model instead.
+spatial_dims: 3
+in_channels: 1
+input_shape: [128, 128, 128]
+
+num_classes: 3
+
+# --- Feature extractor: 4 conv blocks, channels double each block
+# (32 -> 64 -> 128 -> 256), each block halves spatial resolution. ---
+num_blocks: 4
+base_channels: 32
+channel_growth: double
+conv_kernel_size: 3
+pool_kernel_size: 2
+normalization: batch
+activation: relu
+dropout_conv: 0.0
+
+# --- Classification head ---
+fc_hidden_dim: 256
+dropout_fc: 0.5
+
+# --- Weight initialization ---
+weight_init: kaiming

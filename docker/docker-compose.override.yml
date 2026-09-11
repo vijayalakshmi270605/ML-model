@@ -1,0 +1,37 @@
+# Local-verification override (not part of the original design). Two things:
+#
+# 1. POSTGRES_HOST/REDIS_URL: ../.env is written for running the app directly
+#    on the host (POSTGRES_HOST=localhost), which is correct there but wrong
+#    inside the compose network, where the database's hostname is the service
+#    name `db` (and redis is `redis`), not `localhost`. Every service that
+#    talks to Postgres/Redis needs this override.
+# 2. Mounts the trained checkpoint/data/artifacts directories into the
+#    api/worker containers (the base Dockerfiles deliberately don't COPY
+#    artifacts/data into the image, since those are run-specific outputs, not
+#    application code) and points INFERENCE_MODEL_PATH at the trained
+#    checkpoint so the containerized API can actually serve a real
+#    prediction.
+#
+# Compose merges this automatically with docker-compose.yml when both are
+# present — nothing in the base file changed.
+services:
+  api:
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+      INFERENCE_MODEL_PATH: artifacts/checkpoints/adni_3class_run1/best.pt
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../data:/app/data
+
+  worker:
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../data:/app/data
+
+  migrate:
+    environment:
+      POSTGRES_HOST: db

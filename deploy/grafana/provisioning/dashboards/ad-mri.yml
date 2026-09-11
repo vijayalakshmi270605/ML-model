@@ -1,0 +1,13 @@
+# Auto-provisions ad-mri-dashboard.json (bind-mounted into
+# /var/lib/grafana/dashboards, see docker-compose.yml's `grafana` service)
+# on Grafana startup — no manual dashboard import needed.
+apiVersion: 1
+
+providers:
+  - name: ad-mri
+    folder: ad-mri
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

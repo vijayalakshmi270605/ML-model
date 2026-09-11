@@ -1,0 +1,8 @@
+version: "1.0.0"
+
+# "none": plain softmax, uncalibrated — the default. "temperature": divide
+# logits by `temperature` before softmax (Guo et al. 2017). Fit a real
+# temperature with `inference.calibration.fit_temperature` against held-out
+# validation logits/labels — never hand-pick one.
+method: none
+temperature: 1.0

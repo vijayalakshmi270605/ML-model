@@ -1,0 +1,95 @@
+name: CD
+
+# development -> staging -> production, see docs/deployment.md §CD architecture.
+#
+# - A push to the default branch, once CI succeeds, auto-deploys that exact
+#   commit's image to `development` — the fastest, least-gated environment.
+# - Promoting to `staging` or `production` is always a deliberate, manual
+#   `workflow_dispatch` naming one already-CI-passed image tag (never a fresh
+#   build) — this is also how a rollback works: re-run this workflow against
+#   an older `image_tag`. See docs/deployment.md "Rollback capability".
+# - `environment:` on the deploy job is what actually enforces the promotion
+#   order and any required reviewers — GitHub Environments' own protection
+#   rules (configured in repo Settings -> Environments, not in this file; see
+#   docs/deployment.md) gate `staging`/`production`, and each environment
+#   holds its own secrets, scoped to it alone. Nothing below is a secret
+#   value — every ${{ secrets.* }} reference here is resolved from whichever
+#   environment the job actually deploys to.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Environment to deploy to
+        type: choice
+        options: [staging, production]
+        required: true
+      image_tag:
+        description: >-
+          The image tag to deploy (a short git SHA that CI already built and
+          scanned — see the "docker-build" job in ci.yml). To roll back,
+          dispatch again with a previous, known-good tag.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-development:
+    name: Deploy (development)
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      # `workflow_run` never auto-checks out the repository — needed here
+      # only so `uses: ./.github/actions/deploy` below can resolve; checked
+      # out at the exact commit CI just validated, matching IMAGE_TAG.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Compute short image tag
+        id: tag
+        run: echo "short=${IMAGE_TAG:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to development
+        uses: ./.github/actions/deploy
+        with:
+          deploy_host: ${{ secrets.DEPLOY_HOST }}
+          deploy_user: ${{ secrets.DEPLOY_USER }}
+          deploy_ssh_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          deploy_path: ${{ vars.DEPLOY_PATH || '/opt/ad-mri' }}
+          image_registry: ${{ vars.IMAGE_REGISTRY || 'ghcr.io' }}
+          image_repo: ${{ vars.IMAGE_REPO }}
+          image_tag: ${{ steps.tag.outputs.short }}
+          health_url: ${{ vars.HEALTH_URL }}
+
+  deploy-promoted:
+    name: Deploy (${{ inputs.target_environment }})
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    steps:
+      # `workflow_dispatch` runs against the ref the dispatch was invoked
+      # against by default, which is fine here — needed only so
+      # `uses: ./.github/actions/deploy` below can resolve.
+      - uses: actions/checkout@v4
+
+      - name: Deploy ${{ inputs.image_tag }} to ${{ inputs.target_environment }}
+        uses: ./.github/actions/deploy
+        with:
+          deploy_host: ${{ secrets.DEPLOY_HOST }}
+          deploy_user: ${{ secrets.DEPLOY_USER }}
+          deploy_ssh_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          deploy_path: ${{ vars.DEPLOY_PATH || '/opt/ad-mri' }}
+          image_registry: ${{ vars.IMAGE_REGISTRY || 'ghcr.io' }}
+          image_repo: ${{ vars.IMAGE_REPO }}
+          image_tag: ${{ inputs.image_tag }}
+          health_url: ${{ vars.HEALTH_URL }}

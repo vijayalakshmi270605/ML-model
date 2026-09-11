@@ -1,0 +1,117 @@
+# Prometheus alerting rules for ad-mri. Every threshold here is a literal
+# copy of the corresponding constant in `ad_mri.monitoring.thresholds` (the
+# single source of truth — PromQL can't import Python, so this file's
+# comments name the constant each expression mirrors; re-check this file by
+# eye whenever that module's values change). See docs/monitoring.md
+# "Alert thresholds" for the full table and rationale.
+#
+# Mount into Prometheus via its own config:
+#   rule_files:
+#     - /etc/prometheus/alerts.yml
+groups:
+  - name: ad-mri-system
+    rules:
+      - alert: HighCPUUsage
+        # CPU_PERCENT_ALERT_THRESHOLD = 90.0
+        expr: ad_mri_process_cpu_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ad-mri process CPU usage is high ({{ $value | printf \"%.1f\" }}%)"
+          description: "Process CPU has been above 90% for 5 minutes. Consider scaling out or investigating a hot loop."
+
+      - alert: HighMemoryUsage
+        # MEMORY_PERCENT_ALERT_THRESHOLD = 90.0
+        expr: ad_mri_system_memory_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory usage is high ({{ $value | printf \"%.1f\" }}%)"
+          description: "System memory has been above 90% for 5 minutes — risk of OOM-kill."
+
+  - name: ad-mri-http
+    rules:
+      - alert: HighHTTPErrorRate
+        # HTTP_ERROR_RATE_ALERT_THRESHOLD = 0.05
+        expr: >
+          sum(rate(ad_mri_http_requests_total{status_code=~"5.."}[5m]))
+          /
+          sum(rate(ad_mri_http_requests_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP 5xx error rate is above 5% ({{ $value | printf \"%.1%%\" }})"
+          description: "More than 5% of requests over the last 5 minutes returned a server error."
+
+  - name: ad-mri-model
+    rules:
+      - alert: HighInferenceLatencyP95
+        # INFERENCE_LATENCY_P95_ALERT_SECONDS = 10.0
+        expr: >
+          histogram_quantile(0.95, sum(rate(ad_mri_inference_duration_seconds_bucket[5m])) by (le))
+          > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 inference latency is above 10s ({{ $value | printf \"%.2f\" }}s)"
+          description: "Model latency has degraded — check host resources and input sizes."
+
+      - alert: LowConfidenceRate
+        # LOW_CONFIDENCE_THRESHOLD = 0.6, LOW_CONFIDENCE_RATE_ALERT_THRESHOLD = 0.2
+        expr: >
+          sum(rate(ad_mri_prediction_confidence_bucket{le="0.6"}[30m]))
+          /
+          sum(rate(ad_mri_prediction_confidence_count[30m]))
+          > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of predictions over 30m have confidence below 0.6"
+          description: "A rising low-confidence rate can indicate data drift or a model that no longer fits current input. See docs/monitoring.md \"Retraining triggers\"."
+
+      - alert: HighInputFailureRate
+        # INPUT_FAILURE_RATE_ALERT_THRESHOLD = 0.1
+        expr: >
+          sum(rate(ad_mri_inference_requests_total{outcome=~"validation_failed|preprocessing_failed"}[30m]))
+          /
+          sum(rate(ad_mri_inference_requests_total[30m]))
+          > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10% of inference requests are failing validation/preprocessing"
+          description: "A spike here often means an upstream change to how images are being uploaded — check the client/integration, not necessarily the model."
+
+  - name: ad-mri-drift
+    rules:
+      # These two fire off the *offline* report jobs' verdicts
+      # (ad-mri monitor drift-report / model-drift-report), reflected into
+      # these gauges by monitoring.alert_state on every /metrics scrape —
+      # they are not computed by Prometheus itself. Run those reports on a
+      # schedule (cron/CI) for this group to ever have fresh data to alert
+      # on — see docs/monitoring.md "Delayed model-performance monitoring".
+      - alert: DataDriftDetected
+        expr: max(ad_mri_data_drift_alert_active) by (feature) == 1
+        labels:
+          severity: warning
+        annotations:
+          summary: "Data drift detected on feature: {{ $labels.feature }}"
+          description: "The most recent `ad-mri monitor drift-report` run flagged this feature. See docs/monitoring.md \"Retraining triggers\"."
+
+      - alert: ModelDriftDetected
+        expr: max(ad_mri_model_drift_alert_active) by (metric) == 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "Delayed model-performance degradation detected on: {{ $labels.metric }}"
+          description: >-
+            The most recent `ad-mri monitor model-drift-report` run found this metric
+            degraded beyond threshold vs. the registered baseline.
+            See docs/monitoring.md "Retraining triggers".

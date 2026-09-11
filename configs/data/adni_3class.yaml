@@ -1,0 +1,42 @@
+# Real dataset config for the ADNI DICOM export uploaded from DATA.zip
+# (data/raw/adni_3class/), sorted by diagnostic-group folder (AD/CN/EMCI/
+# LMCI/MCI/SMC File) into per-subject folders. One representative DICOM
+# series was kept per subject (subjects with a repeat/duplicate scan across
+# ADNI download batches had only their first series copied in, matching the
+# single-series-per-subject-folder layout ad_mri's DICOM converter expects).
+#
+# Real MRI data must never be committed to git (see .gitignore /
+# docs/TECHNICAL_SPECIFICATION.md §0, §17).
+
+name: adni_3class
+dataset_source: "adni-3class-upload"
+root_dir: data/raw/adni_3class
+modality: T1w
+file_extensions: [".nii.gz", ".nii"]
+subject_dir_pattern: "*"
+
+labels_csv: data/raw/adni_3class/labels.csv
+subject_id_column: subject_id
+label_column: diagnosis
+
+# Raw label (ADNI diagnostic-group folder name) -> canonical 3-class taxonomy.
+# SMC (Subjective Memory Complaint, cognitively near-normal) is grouped with
+# CN; EMCI/LMCI (early/late Mild Cognitive Impairment) are grouped with MCI.
+# Adjust this if you'd rather train on the original 6-way ADNI groups instead
+# (and update configs/model/*.yaml's num_classes to match).
+label_map:
+  CN: CN
+  SMC: CN
+  EMCI: MCI
+  LMCI: MCI
+  MCI: MCI
+  AD: AD
+
+expected_dim_range: [3, 4]
+min_voxel_count: 100000
+convert_dicom: true
+
+seed: 42
+train_ratio: 0.70
+val_ratio: 0.15
+# test_ratio is implied: 1 - train_ratio - val_ratio = 0.15

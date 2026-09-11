@@ -1,0 +1,249 @@
+# Local development stack. Build context is the repo root so Dockerfiles can COPY
+# `src/` and `configs/`. All configuration is env-driven — see ../.env.example.
+# This file is for local development only: it builds images from source, exposes
+# every service's port to the host for convenience, and uses `../.env` (git-
+# ignored, never committed — see docs/deployment.md "Secrets management") for
+# secrets. Production uses docker-compose.prod.yml instead — see that file and
+# docs/deployment.md, which this file does not attempt to duplicate.
+#
+# Services: api, worker, mlflow (tracking server), db (PostgreSQL), redis
+# (Celery broker/backend), plus a one-off `migrate` job (Alembic). Services are
+# logically separated per the Phase 12 requirement — each is its own image/
+# container/health check, never bundled into one process. `prometheus`/
+# `grafana` (Phase 13, `observability` profile — opt-in, not started by a
+# plain `up`) scrape `api`'s `/metrics` and render docs/monitoring.md's
+# dashboard — see deploy/prometheus/, deploy/grafana/.
+#
+#   docker compose -f docker/docker-compose.yml up -d --build
+#   docker compose -f docker/docker-compose.yml --profile tools run --rm migrate
+#   docker compose -f docker/docker-compose.yml --profile observability up -d
+
+x-build-args: &build-args
+  APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+  GIT_COMMIT: ${GIT_COMMIT:-local}
+  BUILD_DATE: ${BUILD_DATE:-unknown}
+
+x-logging: &default-logging
+  # Structured logs (LOG_FORMAT=json in ../.env for a prod-like local run) go
+  # to stdout/stderr as usual; this just bounds the local Docker log driver's
+  # on-disk footprint — see docs/deployment.md "Structured logs".
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+      args: *build-args
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    # Local-dev-scale limits (see docker-compose.prod.yml for production
+    # values) — still real, not decorative: `docker compose up` (Compose V2)
+    # applies `deploy.resources` even outside Swarm mode.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+        reservations:
+          cpus: "0.5"
+          memory: 512m
+    networks: [ad_mri_net]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+      args: *build-args
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A ad_mri.worker.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+        reservations:
+          cpus: "0.5"
+          memory: 1g
+    networks: [ad_mri_net]
+
+  mlflow:
+    build:
+      context: ..
+      dockerfile: docker/mlflow.Dockerfile
+      args: *build-args
+    # A separate `mlflow` database on the same PostgreSQL instance (see
+    # `db`'s init-mlflow-db.sh below) — MLflow's own run/experiment metadata
+    # never shares a schema with the application's audit trail (db.models).
+    command:
+      - --backend-store-uri=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${MLFLOW_POSTGRES_DB:-mlflow}
+      - --default-artifact-root=/mlartifacts
+    volumes:
+      - mlflow_artifacts:/mlartifacts
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+    networks: [ad_mri_net]
+
+  # One-off Alembic migration job — the api image, migrate command instead of
+  # uvicorn. `profiles: [tools]` keeps it out of `docker compose up`'s default
+  # service set; run it explicitly, once, before starting api/worker against a
+  # fresh database:
+  #   docker compose -f docker/docker-compose.yml --profile tools run --rm migrate
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+      args: *build-args
+    env_file:
+      - ../.env
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: [tools]
+    networks: [ad_mri_net]
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ad_mri}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates the separate `mlflow` database the `mlflow` service's backend
+      # store uses, alongside the app's own POSTGRES_DB — one PostgreSQL
+      # instance, two logically separate databases, in local dev.
+      - ./init-mlflow-db.sh:/docker-entrypoint-initdb.d/init-mlflow-db.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
+    networks: [ad_mri_net]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256m
+    networks: [ad_mri_net]
+
+  # --- Phase 13 monitoring stack — opt-in (`--profile observability`) ---
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    volumes:
+      - ../deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [observability]
+    networks: [ad_mri_net]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Local dev only — a real deployment sets a real admin password via
+      # the production secrets file (docs/deployment.md §6), never here.
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ../deploy/grafana/ad-mri-dashboard.json:/var/lib/grafana/dashboards/ad-mri-dashboard.json:ro
+      - ../deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [observability]
+    networks: [ad_mri_net]
+
+networks:
+  ad_mri_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mlflow_artifacts:
+  prometheus_data:
+  grafana_data:

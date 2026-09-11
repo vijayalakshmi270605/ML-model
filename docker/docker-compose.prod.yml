@@ -1,0 +1,208 @@
+# Production stack. Unlike docker-compose.yml (local dev), this file:
+#   - never builds an image — it pulls the exact, already-scanned artifact
+#     CI built and CD promoted (see .github/workflows/cd.yml and
+#     docs/deployment.md "Versioned model artifacts" / "Rollback capability");
+#     ${IMAGE_REGISTRY}/${IMAGE_REPO}-api:${IMAGE_TAG} etc.
+#   - reads secrets from an env file that lives OUTSIDE this repository,
+#     already present on the target host (placed there by the deployment
+#     process — see docs/deployment.md "Secrets management"); nothing here
+#     is a default credential, unlike docker-compose.yml's ../.env.
+#   - exposes only the API's port; db/redis/mlflow stay on the internal
+#     network only — a reverse proxy/load balancer (outside this file's
+#     scope) terminates TLS and forwards to `api`.
+#   - runs every container with a read-only root filesystem, no new
+#     privileges, and all Linux capabilities dropped, and with production-
+#     scale resource limits (both limits and reservations).
+#
+# The `db`/`redis`/`mlflow` services below are a self-hosted fallback for a
+# single-host production deployment. A larger deployment typically points
+# DATABASE_URL/REDIS_URL/MLFLOW_TRACKING_URI (in the external env file above)
+# at managed equivalents (RDS/ElastiCache/a managed MLflow) instead and omits
+# these three services entirely — nothing in `api`/`worker` cares which.
+#
+#   docker compose -f docker/docker-compose.prod.yml --env-file /etc/ad-mri/production.env pull
+#   docker compose -f docker/docker-compose.prod.yml --env-file /etc/ad-mri/production.env up -d
+#   docker compose -f docker/docker-compose.prod.yml --profile tools run --rm migrate
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: always
+  logging: *default-logging
+
+services:
+  api:
+    <<: *hardening
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/${IMAGE_REPO:-ad-mri}-api:${IMAGE_TAG:?set IMAGE_TAG, e.g. the deployed git SHA}
+    env_file:
+      - ${SECRETS_ENV_FILE:-/etc/ad-mri/production.env}
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      LOG_FORMAT: json
+      API_RELOAD: "false"
+    ports:
+      - "8000:8000"
+    read_only: true
+    tmpfs:
+      # Per-request upload temp dirs (api.upload_utils) and any transient
+      # explanation-artifact staging need a writable path even on an
+      # otherwise read-only root filesystem.
+      - /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4g
+        reservations:
+          cpus: "1"
+          memory: 1g
+    networks: [ad_mri_net]
+
+  worker:
+    <<: *hardening
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/${IMAGE_REPO:-ad-mri}-worker:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file:
+      - ${SECRETS_ENV_FILE:-/etc/ad-mri/production.env}
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      LOG_FORMAT: json
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A ad_mri.worker.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 6g
+        reservations:
+          cpus: "1"
+          memory: 2g
+    networks: [ad_mri_net]
+
+  # See docker-compose.yml's `migrate` service — identical purpose, pinned to
+  # the same versioned image being deployed rather than rebuilt.
+  migrate:
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/${IMAGE_REPO:-ad-mri}-api:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file:
+      - ${SECRETS_ENV_FILE:-/etc/ad-mri/production.env}
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: [tools]
+    networks: [ad_mri_net]
+
+  mlflow:
+    <<: *hardening
+    image: ${IMAGE_REGISTRY:?set IMAGE_REGISTRY}/${IMAGE_REPO:-ad-mri}-mlflow:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file:
+      - ${SECRETS_ENV_FILE:-/etc/ad-mri/production.env}
+    command:
+      - --backend-store-uri=${MLFLOW_BACKEND_STORE_URI:?set MLFLOW_BACKEND_STORE_URI}
+      - --default-artifact-root=${MLFLOW_ARTIFACT_ROOT:-/mlartifacts}
+    volumes:
+      - mlflow_artifacts:/mlartifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+    networks: [ad_mri_net]
+
+  # Self-hosted fallback — see the file header. Not hardened with `*hardening`
+  # (read-only root/dropped capabilities on the upstream postgres/redis
+  # images are outside this repo's control); network-isolated instead (no
+  # published ports) and given its own resource ceiling.
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - ${SECRETS_ENV_FILE:-/etc/ad-mri/production.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+    restart: always
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4g
+        reservations:
+          cpus: "1"
+          memory: 1g
+    networks: [ad_mri_net]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: always
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+    networks: [ad_mri_net]
+
+networks:
+  ad_mri_net:
+    driver: bridge
+    internal: false  # `api`'s published port still needs external reachability
+
+volumes:
+  postgres_data:
+  redis_data:
+  mlflow_artifacts:

@@ -1,0 +1,60 @@
+# Improved training configuration for adni_3class_run2 — every change from
+# configs/training/default.yaml is justified below by what run1's log
+# actually showed (see PRODUCTION_READINESS_REPORT.md / train_run.log),
+# not a blind grid search.
+version: "1.0.0"
+
+batch_size: 8
+epochs: 40
+num_workers: 0
+
+optimizer: adamw
+learning_rate: 0.001
+# run1: weight_decay=0.0001 with 1.23M params / 134 samples is very light
+# regularization for that parameter-to-sample ratio. Raised 10x.
+weight_decay: 0.001
+momentum: 0.9
+gradient_clip_norm: 1.0
+
+# run1 used `cosine` with an *implicit* T_max=50 (epochs), but early stopping
+# actually cut the run at epoch 17 — meaning the LR barely began to anneal
+# before training stopped, so the model trained at a near-constant, relatively
+# high LR the whole time. `plateau` reacts to the actual monitored metric
+# (val_loss) regardless of how long the run turns out to run, so it always
+# gets a real chance to fine-tune once progress stalls, whether that's at
+# epoch 10 or epoch 40.
+scheduler: plateau
+scheduler_step_size: 10
+scheduler_gamma: 0.1
+scheduler_t_max: null
+scheduler_patience: 4
+
+# Raised from 10: `plateau` needs room to reduce LR at least once or twice
+# (scheduler_patience=4 each) before early stopping should give up.
+early_stopping_patience: 15
+early_stopping_metric: val_loss
+early_stopping_mode: min
+early_stopping_min_delta: 0.0
+
+# run1 used loss re-weighting (class_imbalance_strategy: loss_weights), which
+# visibly over-corrected: AD recall hit 100% at the cost of a flood of false
+# AD predictions, and MCI recall (the majority class) collapsed to 18.75% on
+# the held-out test set. A resampling strategy (WeightedRandomSampler) lets
+# every mini-batch already be class-balanced, which is normally a gentler
+# correction than distorting the loss landscape via per-class weights.
+class_imbalance_strategy: sampler
+
+mixed_precision: true
+device: auto
+
+seed: 42
+deterministic: false
+
+checkpoint_dir: artifacts/checkpoints
+save_every_n_epochs: 1
+
+mlflow_enabled: true
+mlflow_experiment_name: ad-mri
+mlflow_tracking_uri: null
+
+log_every_n_steps: 10

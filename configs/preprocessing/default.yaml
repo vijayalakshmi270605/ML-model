@@ -1,0 +1,49 @@
+# Default preprocessing/augmentation configuration — validated by
+# ad_mri.datasets.preprocessing_config.PreprocessingConfig.
+#
+# `version` is a human-set semantic version: bump it whenever you change
+# preprocessing *logic* (e.g. add a normalization mode, change interpolation).
+# It's recorded alongside a computed content-hash wherever this config is
+# saved (see `save_preprocessing_config`), so a manifest/model can always be
+# traced back to the exact recipe that produced it.
+version: "1.0.0"
+
+# --- Spatial standardization ---
+target_orientation: RAS
+target_spacing: [1.5, 1.5, 1.5]
+target_shape: [128, 128, 128]
+interpolation_mode: bilinear
+
+# --- Intensity normalization ---
+# zscore_nonzero | zscore | percentile_clip | min_max — all computed per-volume
+# (never across the dataset), so there is no channel for val/test statistics
+# to leak into training. Switch to percentile_clip if your source datasets mix
+# scanners/protocols with very different intensity distributions.
+normalization: zscore_nonzero
+percentile_clip: [0.5, 99.5]
+
+# --- Runtime input validation (before the pipeline touches an image) ---
+expected_dim_range: [3, 4]
+min_voxel_count: 100000
+
+# --- Optional quality control (after preprocessing, before augmentation) ---
+enable_quality_control: true
+qc_mode: raise   # raise | warn
+qc_min_nonzero_ratio: 0.01
+
+# --- Training-only augmentation (never applied at val/test/inference) ---
+augmentation:
+  enabled: true
+  probability: 0.5
+  rotation_range_deg: 10.0        # small head-tilt-like rotation, not 90-degree turns
+  translation_range_voxels: 5.0
+  scale_range: 0.1                # +/-10%
+  intensity_shift_range: 0.1
+  intensity_scale_range: 0.1
+  gaussian_noise_std: 0.01
+  allow_flip: false               # off by default — AD-related atrophy can be asymmetric
+  flip_probability: 0.5
+
+# Set to an int to pin augmentation's RNG for reproducible runs (tests/demos).
+# Leave null for normal training, which relies on the global seed instead.
+seed: null

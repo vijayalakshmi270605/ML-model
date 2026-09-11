@@ -1,0 +1,5 @@
+# DVC pipeline parameters (see dvc.yaml). Mirrors the dataset config selected for
+# the tracked pipeline — copy configs/data/dataset_example.yaml, point it at your
+# real dataset, then update these two values to match.
+dataset_config: configs/data/adni_3class.yaml
+dataset_name: adni_3class

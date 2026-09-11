@@ -1,0 +1,137 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ad-mri"
+version = "0.1.0"
+description = "Production-grade Alzheimer's Disease MRI classification system (research / decision-support; not a certified medical device)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Project Maintainers" }]
+
+# Core runtime dependencies for the API/service layer.
+# `docker/api.Dockerfile` installs `.[train]`, not this list alone: since Phase 9,
+# InferenceEngine runs synchronously in-process inside the API (predictor.py's
+# module docstring — "the API must call the inference service rather than
+# duplicating model logic", not "the API delegates inference to another
+# process"), so the api image needs torch/monai too, same as worker/training.
+# This list is still the floor every image (including a hypothetical future
+# lean image that only ever returns 503 for /predictions, e.g. a routing-only
+# deployment) needs at minimum — psutil is here rather than in `train` because
+# system-resource metrics (monitoring.system_metrics) must work even then.
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "structlog>=24.1",
+    "python-dotenv>=1.0",
+    "typer>=0.12",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg2-binary>=2.9",
+    "python-multipart>=0.0.9",
+    "PyYAML>=6.0",
+    "psutil>=5.9",
+    "prometheus-client>=0.20",
+]
+
+[project.optional-dependencies]
+# Optional, off-by-default (Phase 14 addendum): natural-language narrative
+# summaries of a LIME/SHAP explanation's numeric output
+# (explainability.llm_summary). Not required for the core API/train images —
+# lazily imported, exactly like lime/shap/torch above, so nothing else in this
+# project depends on it being installed.
+llm = [
+    "openai>=1.40",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "black>=24.3",
+    "mypy>=1.9",
+    "pre-commit>=3.7",
+    "types-PyYAML",
+    # CI "security checks" step (docs/deployment.md §CI/CD) — SAST + dependency
+    # vulnerability scanning. Neither needs the `train` extra installed.
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+]
+train = [
+    "torch>=2.2",
+    "monai>=1.3",
+    "mlflow>=2.12",
+    "dvc[s3]>=3.50",
+    "optuna>=3.6",
+    "lime>=0.2.0.1",
+    "shap>=0.45",
+    "celery>=5.4",
+    "redis>=5.0",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scikit-learn>=1.4",
+    # Explicit, not just scikit-learn's transitive pin — monitoring.drift's
+    # KS-test-based drift detection (Phase 13) depends on it directly.
+    "scipy>=1.11",
+    "nibabel>=5.2",
+    "matplotlib>=3.8",
+    "evidently>=0.4",
+    "pydicom>=2.4",
+]
+
+[project.scripts]
+ad-mri = "ad_mri.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection pattern and Typer's CLI-option pattern both rely
+# on calling Depends()/Header()/Option()/etc. as parameter defaults — this is
+# idiomatic for both frameworks, not a mutable-default bug.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "typer.Option",
+    "typer.Argument",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+exclude = ["tests/"]
+
+[tool.bandit]
+# Scans `src/` only — see .github/workflows/ci.yml's "security" job.
+exclude_dirs = ["tests", ".venv", "notebooks"]
+# B101 (assert): this codebase never uses `assert` for request/security validation
+# outside tests — real checks raise a typed `core.exceptions` subclass instead,
+# so a stripped-assert (`python -O`) production run can't silently skip one.
+skips = ["B101"]

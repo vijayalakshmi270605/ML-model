@@ -1,0 +1,5 @@
+# Heavy ML / training / MLOps / explainability dependencies (torch, monai, mlflow,
+# dvc, optuna, lime, shap, celery, redis, ...). Install only on training hosts,
+# worker images, or training CI jobs — never in the lean API image.
+# Run from the repository root: pip install -r requirements/train.txt
+-e .[train]
