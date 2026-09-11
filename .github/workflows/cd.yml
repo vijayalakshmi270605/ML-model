@@ -51,7 +51,7 @@ jobs:
       # `workflow_run` never auto-checks out the repository — needed here
       # only so `uses: ./.github/actions/deploy` below can resolve; checked
       # out at the exact commit CI just validated, matching IMAGE_TAG.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -80,7 +80,7 @@ jobs:
       # `workflow_dispatch` runs against the ref the dispatch was invoked
       # against by default, which is fine here — needed only so
       # `uses: ./.github/actions/deploy` below can resolve.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Deploy ${{ inputs.image_tag }} to ${{ inputs.target_environment }}
         uses: ./.github/actions/deploy
