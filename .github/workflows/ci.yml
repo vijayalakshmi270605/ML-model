@@ -118,7 +118,7 @@ jobs:
           pytest tests/unit tests/api tests/data_validation tests/explainability
           --cov=ad_mri --cov-report=term-missing --cov-report=xml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-unit
