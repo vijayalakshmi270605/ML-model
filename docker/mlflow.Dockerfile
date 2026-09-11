@@ -5,7 +5,7 @@
 # store (see docker-compose.yml's `mlflow` service) so run/experiment
 # metadata survives a container restart; artifacts go to a mounted volume
 # (local dev) or object storage (production — see docs/deployment.md).
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ARG APP_VERSION=0.0.0
 ARG GIT_COMMIT=unknown
