@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Build context is the repo root — see docker/docker-compose.yml.
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -20,7 +20,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # hadolint ignore=DL3013
 RUN pip install --upgrade pip && pip install ".[train]"
 
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 # Populated by `docker build --build-arg ...` (see .github/workflows/ci.yml /
 # docs/deployment.md "Versioned model artifacts" — this labels the *serving
